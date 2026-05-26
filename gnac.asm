@@ -2,7 +2,6 @@
 section .bss
     vs resb 13
     cpun resb 49
-    wbuf resw 128
     buf resb 128
     cr resd 1
     col resd 1
@@ -10,13 +9,32 @@ section .bss
     sn resq 1
 section .data
     bc db 7,0
-    cexit db "exit",13,10,0
-    chelp db "help",13,10,0
-    ccpun db "cpun",13,10,0
-    ccls db "cls",13,10,0
+    cexit db "exit",10,0
+    chelp db "help",10,0
+    ccpun db "cpun",10,0
+    ccls db "cls",10,0
     ccol db "col %d",13,10,0
-    csum db "sum %d %d",13,10,0
-    csub db "sub %d %d",13,10,0
+    clang db "lang %d",13,10,0
+    csum db "sum %lld %lld",13,10,0
+    csub db "sub %lld %lld",13,10,0
+    cmul db "mul %lld %lld",13,10,0
+    cdiv db "div %lld %lld",13,10,0
+    cdebug db "dbg %d",13,10,0
+    
+    msg_p db 0
+    
+    ;lang ru
+    help_ru db "help - Помощь", 10, "cpun - Имя ЦПУ", 10, "exit - Закрыть программу", 10, "cls - Очистить экран", 10, "col %d - Сменить цвет консоли",10, "lang %d - Сменить язык", 10, "sum/sub/mul/div %d %d - крутые калькуляторы", 10, "dbg %d - очень странная штука для дебаггинга", 0
+    ;lang en
+    help_en db "help - Help", 10, "cpun - CPU Name", 10, "exit - Close Program", 10, "cls - Clear Screen", 10, "col %d - Change Console Color",10, "lang %d - Change language", 10, "sum/sub/mul/div %d %d - Cool Calculators", 10, "dbg %d - A Very Strange Thing for Debugging", 0
+    ;lang pl
+    help_pl db "help - Pomoc", 10, "cpun - Nazwa procesora", 10, "exit - Zamknij program", 10, "cls - Wyczyść ekran", 10, "col %d - Zmień kolor konsoli", 10, "sum/sub/mul/div %d %d - Fajne kalkulatory", 10, "dbg %d - Bardzo dziwna rzecz do debugowania", 0
+    
+    lang:
+        dq help_en, help_ru, help_pl
+    
+    cur_lang dq 0
+    LANG_C equ 3
 section .text
 global main
 extern Sleep
@@ -27,9 +45,54 @@ extern SetConsoleOutputCP
 extern sscanf
 extern system
 extern SetConsoleTextAttribute
+extern strcmp
 extern ExitProcess ;stupid ret is not working, sorry
+%macro GAPLS 1 ;Get and print language string
+    mov rax, %1
+    imul rax, 24 ; x*8, x=3
+    mov rbx, [cur_lang]
+    shl rbx, 3 ;cur_lang*8
+    add rax, rbx ;x*8+cur_lang*8
+    mov rax, [lang+rax] ;pointer to lang+(x*8+cur_lang*8)
+    PRINT_STRING [rax] ;get out!
+%endmacro
+
+%macro INVOKE1 2
+    sub rsp, 32
+    mov rcx, %2
+    call %1
+    add rsp, 32
+%endmacro
+
+%macro INVOKE2 3
+    sub rsp, 32
+    mov rcx, %2
+    mov rdx, %3
+    call %1
+    add rsp, 32
+%endmacro
+
+%macro INVOKE3 4
+    sub rsp, 32
+    mov rcx, %2
+    mov rdx, %3
+    mov r8, %4
+    call %1
+    add rsp, 32
+%endmacro
+
+%macro INVOKE4 5
+    sub rsp, 32
+    mov rcx, %2
+    mov rdx, %3
+    mov r8, %4
+    mov r9, %5
+    call %1
+    add rsp, 32
+%endmacro
+
 main:
-    sub rsp, 64
+    mov rbp, rsp; for correct debugging
     mov rcx, 65001
     call SetConsoleOutputCP ;UTF-8
     push rbp
@@ -82,76 +145,27 @@ main:
     NEWLINE
 .s:
     PRINT_STRING ">"
-    push rdi
-    push rcx
-    push rax
-    mov rdi, buf
-    mov al, 0
-    mov rcx,64
-    cld
-    rep stosb
-    mov rdi, wbuf
-    mov al, 0
-    mov rcx, 128
-    cld
-    rep stosb
-    pop rcx
-    pop rdi
-    pop rax
-    mov rcx, -10
-    call GetStdHandle
-    mov r12, rax
-    mov rcx, r12
-    mov rdx, wbuf
-    mov r8, 64
-    mov r9, cr
-    mov qword [rsp+32],0
-    call ReadConsoleW ;input
-    mov rcx, 65001
-    mov rdx, 0
-    mov r8, wbuf
-    mov r9, -1
-    mov qword [rsp+32], buf
-    mov qword [rsp+40], 64
-    mov qword [rsp+48], 0
-    mov qword [rsp+56], 0
-    call WideCharToMultiByte ;По русски, пожалуйста
-    
-    mov rsi, buf
-    mov rdi, cexit ;exit
-    mov rcx, 6
-    cld
-    repe cmpsb
+    GET_STRING buf, 256
+    INVOKE2 strcmp, buf, cexit
+    cmp rax, 0
     je .rt
     jne .t
 .t:
-    mov rsi, buf
-    mov rdi, chelp ;help
-    mov rcx, 6
-    cld
-    repe cmpsb
+    INVOKE2 strcmp, buf, chelp
+    cmp rax, 0
     je .help
     jne .scls
 .scls:
-    mov rsi, buf
-    mov rdi, ccls
-    mov rcx, 5
-    cld
-    repe cmpsb
+    INVOKE2 strcmp, buf, ccls
+    cmp rax, 0
     je .cls
     jne .lol
 .cls:
-    sub rsp, 32
-    mov rcx, ccls
-    call system
-    add rsp, 32
+    INVOKE1 system,ccls
     jmp .s
 .lol:
-    mov rsi, buf
-    mov rdi, ccpun
-    mov rcx, 6
-    cld
-    repe cmpsb
+    INVOKE2 strcmp, buf, ccpun
+    cmp rax, 0
     je .cpun
     jne .col
 .cpun:
@@ -159,90 +173,127 @@ main:
     NEWLINE
     jmp .s
 .help:
-    PRINT_STRING "help - Помощь"
-    NEWLINE
-    PRINT_STRING "cpun - Имя ЦПУ"
-    NEWLINE
-    PRINT_STRING "exit - Закрыть программу"
-    NEWLINE
-    PRINT_STRING "sum %d %d - Сумма"
-    NEWLINE
-    PRINT_STRING "sub %d %d - Вычитание"
-    NEWLINE
-    PRINT_STRING "col %d - Сменить цвет консоли"
-    NEWLINE
-    PRINT_STRING "cls - Очистить экран"
+    GAPLS 0
     NEWLINE
     jmp .s
 .col:
-    sub rsp, 32
-    mov rcx, buf
-    mov rdx, ccol
-    mov r8, col
-    call sscanf
-    add rsp, 32
+    INVOKE3 sscanf, buf, ccol, col
+    
+    cmp rax, 1
+    jne .clang
+    
+    INVOKE1 GetStdHandle, -11
+    push rax
+    INVOKE2 SetConsoleTextAttribute, rax, [col]
+    pop rcx
+    jmp .s
+.clang:
+    INVOKE3 sscanf, buf, clang, fn
     
     cmp rax, 1
     jne .Nsum
     
-    sub rsp, 32
-    mov rcx, -11
-    call GetStdHandle
-    add rsp, 32
-    push rax
-    sub rsp, 32
-    mov rcx, rax
-    mov rdx, [col]
-    call SetConsoleTextAttribute
-    add rsp, 32
+    cmp qword [fn], 0
+    jl .s
+    cmp qword [fn], LANG_C
+    jge .s
+    mov rax, [fn]
+    mov qword [cur_lang], rax
     jmp .s
 .Nsum:
-    add rsp, 32
     jmp .sum
 .sum:
-    sub rsp, 32
-    mov rcx, buf
-    mov rdx, csum
-    mov r8, fn
-    mov r9, sn
-    call sscanf
-    add rsp, 32
+    INVOKE4 sscanf, buf, csum, fn, sn
     
     cmp rax, 2
-    jne .Nsub
+    jne .sub
     
+    push r12
     mov r12, qword [fn]
     add r12, qword [sn]
     PRINT_DEC 8, r12
     NEWLINE
-    add rsp, 32
+    pop r12
     jmp .s
-.Nsub:
-    add rsp, 32
-    jmp .sub
 .sub:
-    sub rsp, 32
-    mov rcx, buf
-    mov rdx, csub
-    mov r8, fn
-    mov r9, sn
-    call sscanf
-    add rsp, 32
+    INVOKE4 sscanf, buf, csub, fn, sn
     
     cmp rax, 2
-    jne .Ns
+    jne .Nmul
     
+    push r12
     mov r12, qword [fn]
     sub r12, qword [sn]
     PRINT_DEC 8, r12
     NEWLINE
-    add rsp, 32
+    pop r12
+    jmp .s
+.Nmul:
+    jmp .mul
+.mul:
+    INVOKE4 sscanf, buf, cmul, fn, sn
+    
+    cmp rax, 2
+    jne .Ndiv
+    
+    push r12
+    mov r12, qword [fn]
+    imul r12, qword [sn]
+    PRINT_DEC 8, r12
+    NEWLINE
+    pop r12
+    jmp .s
+.Ndiv:
+    jmp .div
+.div:
+    INVOKE4 sscanf, buf, cdiv, fn, sn
+    
+    cmp rax, 2
+    jne .debug
+    
+    push rbx
+    push rdx
+    mov rbx, qword [sn]
+    test rbx, rbx
+    je .errdiv
+    mov rax, qword [fn]
+    cqo
+    idiv rbx
+    PRINT_DEC 8, rax
+    NEWLINE
+    PRINT_DEC 8, rdx
+    NEWLINE
+    pop rdx
+    pop rbx
+    jmp .s
+.errdiv:
+    pop rdx
+    pop rbx
+    PRINT_STRING "DIV_ERR_BY_0"
+    NEWLINE
+    jmp .Ns
+.debug:
+    INVOKE3 sscanf, buf, cdebug, fn
+    
+    cmp rax, 1
+    jne .Ns
+    
+    cmp qword [fn], 1
+    je .rt
+    cmp qword [fn], 2
+    je .oops
     jmp .s
 .Ns:
-    add rsp, 32
     jmp .s
+.oops:
+    ;dbg 2 is the stupid idea
+    ;
+    ;
+    ;idk what i should add
+    ;
+    ;
+    mov rax, [0] ;oh no nullptr is dereferenced
 .rt:
-    add rsp, 64
     pop rbp
     xor rcx, rcx
     call ExitProcess
